@@ -6,12 +6,11 @@ Process earnings call PDFs: extract parent/child chunks, themes (positive/negati
 
 1. **Clone and install**
    ```bash
-   cd codeCleaning
    pip install -r requirements.txt
    ```
 
 2. **Secrets**
-   - Copy `.env.example` to `.env`
+   - use `.env`
    - Set `OPENAI_API_KEY` (your key; works with the default gateway).
    - Default gateway: `OPENAI_API_BASE=https://ai-gateway.smallcase.com/`. Optionally set `HUGGINGFACEHUB_API_TOKEN` for HuggingFace/Qwen.
 
@@ -34,14 +33,16 @@ python run_pipeline.py path/to/your.pdf -o output --provider openai --model gpt-
 - `--embed-model` – Embedding model name
 
 **Outputs (in `output/`):**
-- `Main_<run_name>.pkl` / `.xlsx` – Main DataFrame with parent/child chunks and embeddings
-- `Plan_<run_name>.pkl` – Planned actions and embeddings
-- `Exec_<run_name>.pkl` – Executed actions and embeddings
-- `cost_<run_name>.json` – Cost and token usage per step and total
+- `Main_<run_name>.json` / `.xlsx` – Main DataFrame with parent/child chunks and embeddings
+- `Plan_<run_name>.json` – Planned actions and embeddings
+- `Exec_<run_name>.json` – Executed actions and embeddings
+-  `Pos_<run_name>.json` – Positive themes, details, and embeddings
+-  `Neg_<run_name>.json` – Negative themes, details, and embeddings
+-  `cost_<run_name>.json` – Cost and token usage per step and total
 
 ## Project layout
 
-- `config.py` – Loads `.env` and exposes `OPENAI_API_KEY`, `HUGGINGFACEHUB_API_TOKEN`, default model names.
+- `config.py` – Loads `.env` and exposes `OPENAI_API_KEY`, `HUGGINGFACEHUB_API_TOKEN`, and default model names.
 - `llm_providers.py` – LLM abstraction: `get_llm(provider, model_name)` returns an adapter; same prompts/workflow for OpenAI or HuggingFace (Qwen).
 - `cost_tracker.py` – `CostTracker`: records each LLM call (tokens, cost), `print_summary()`, `get_summary_for_output()`.
 - `prompts.py` – `PromptCollections`: parent chunks, subchunks, neg/pos/executed/planned theme prompts.
@@ -87,5 +88,6 @@ The pipeline already adds:
 4. **Local (no API):** For a model that runs locally (e.g. `Qwen/Qwen2.5-7B-Instruct`), install `transformers` and `torch`; the code will use `HuggingFacePipeline` if `langchain-huggingface` is not installed. No `HUGGINGFACEHUB_API_TOKEN` needed for local runs.
 
 See `HUGGINGFACE_USAGE.md` for a step-by-step checklist.
+
 
 
