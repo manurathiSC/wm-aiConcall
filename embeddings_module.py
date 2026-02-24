@@ -55,18 +55,15 @@ def _embed_openai(
     texts: List[str],
     model_name: Optional[str] = None,
     api_key: Optional[str] = None,
-    openai_api_base: Optional[str] = None,
     **kwargs: Any,
 ) -> List[List[float]]:
     from langchain_openai import OpenAIEmbeddings
-    from config import OPENAI_API_KEY, OPENAI_API_BASE
-    key = api_key or OPENAI_API_KEY
-    model = model_name or "text-embedding-3-small"
-    base = openai_api_base if openai_api_base is not None else OPENAI_API_BASE
-    params = dict(model=model, api_key=key, **kwargs)
-    if base:
-        params["openai_api_base"] = base.rstrip("/") + "/"
-    emb = OpenAIEmbeddings(**params)
+    from config import OPENAI_DIRECT_API_KEY
+    # Always use direct OpenAI for embeddings (gateway does not support this endpoint).
+    # Explicitly set base_url to real OpenAI to override any OPENAI_API_BASE env var.
+    key = api_key or OPENAI_DIRECT_API_KEY
+    model = model_name or "text-embedding-3-large"
+    emb = OpenAIEmbeddings(model=model, api_key=key, base_url="https://api.openai.com/v1", **kwargs)
     return emb.embed_documents(texts)
 
 

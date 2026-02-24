@@ -195,6 +195,54 @@ class PromptCollections:
             {docs}
             """
 
+    def get_all_themes(self) -> str:
+        return """
+            You are a senior financial analyst covering this company. You have been provided with summarized sections from an earnings call transcript.
+
+            Your task is to identify **up to 10 key themes** from this earnings call that would be most valuable for an analyst tracking this stock.
+
+            Guidelines:
+            - Each theme must be **completely distinctive** — no overlap in content between themes.
+            - Theme names must be **specific** (4–8 words). Avoid generic names like "Financial Results" or "Company Overview".
+            - Each theme must have exactly **4–5 bullet points** with concrete facts, figures, and management commentary.
+            - Prioritize themes that reflect: financial performance, strategic direction, operational highlights, risks, and forward guidance.
+            - Cover the full breadth of the call — do not cluster multiple topics into one theme just to stay under 10.
+            - Do not mention individuals by name. Generalize such references.
+            - Only include information explicitly present in the input sections.
+
+            ### Output Format:
+            Return a JSON list of up to 10 objects:
+            [{{"theme_name": "<specific theme name>", "details": ["<bullet 1>", "<bullet 2>", "<bullet 3>", "<bullet 4>", "<bullet 5>"]}}]
+
+            ### Input — Earnings Call Sections:
+            {docs}
+            """
+
+    def get_overall_summary(self) -> str:
+        return """
+            You are a senior equity research analyst writing the opening paragraph of a post-earnings call note for institutional investors.
+            You have been given key themes extracted from an earnings call, each with supporting detail.
+
+            Write a **single, smooth, flowing paragraph of 150–180 words** that tells the story of this earnings call.
+
+            ### What this paragraph should do:
+            - Open with a **single headline sentence** capturing the dominant message of the call (strong quarter, turnaround, cautious guidance, etc.)
+            - Briefly establish financial context with **1–2 anchor figures** (e.g. revenue growth, a key metric) — do not list all numbers
+            - Convey management's **overall tone and strategic priorities** — what did they want investors to walk away believing?
+            - Acknowledge any **tension or balance** in the call (e.g. strong results but near-term execution risk, or bullish outlook tempered by one concern)
+            - Close with the **key watchpoint** an analyst should monitor going forward
+
+            ### Style rules:
+            - Smooth, connected prose — no bullet points, no theme headers, no fragmented sentences
+            - Do not repeat theme names verbatim or list topics one after another
+            - Do not use: "the earnings call revealed", "the company is navigating", "themes highlight", "it is worth noting"
+            - Do not mention individuals by name
+            - Only use information present in the input themes
+
+            ### Input Themes:
+            {themes}
+            """
+
     def get_planned_theme(self) -> str:
         return """
             As a highly experienced financial research analyst, your task is to synthesize a series of text chunks from a company's earnings call. The provided chunks are specifically filtered to contain information about 'planned' actions and future guidance, rather than executed results.

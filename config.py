@@ -11,6 +11,9 @@ load_dotenv(dotenv_path=_env_path)
 
 # API keys and secrets (never commit .env)
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "")
+# Direct OpenAI key for endpoints not supported by the gateway (e.g. embeddings).
+# Falls back to OPENAI_API_KEY if not set separately.
+OPENAI_DIRECT_API_KEY = os.getenv("OPENAI_DIRECT_API_KEY", "") or OPENAI_API_KEY
 HUGGINGFACEHUB_API_TOKEN = os.getenv("HUGGINGFACEHUB_API_TOKEN", "")
 
 # OpenAI-compatible gateway (e.g. Smallcase AI Gateway)

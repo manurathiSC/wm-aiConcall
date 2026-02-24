@@ -7,7 +7,7 @@ from concurrent.futures import ThreadPoolExecutor
 from typing import Any, List, Optional, Tuple
 
 import pandas as pd
-from langchain_core.output_parsers import JsonOutputParser
+from langchain_core.output_parsers import JsonOutputParser, StrOutputParser
 from langchain_core.runnables import Runnable
 from langchain_community.callbacks import get_openai_callback
 from tqdm import tqdm
@@ -52,6 +52,11 @@ class ProcessConcall:
         """Build chain: prompt | llm (returns message with .content)."""
         llm = self.llm_adapter.get_langchain_model(temperature=temperature)
         return prompt_template | llm
+
+    def _chain_str_parser(self, prompt_template: Runnable, temperature: float = 0) -> Runnable:
+        """Build chain: prompt | llm | str parser (returns plain string)."""
+        llm = self.llm_adapter.get_langchain_model(temperature=temperature)
+        return prompt_template | llm | StrOutputParser()
 
     def get_context_summary(
         self,
@@ -235,6 +240,56 @@ class ProcessConcall:
             out = chain.invoke({"docs": result})
             self.cost_tracker.add_from_openai_callback("process_exec", cb, self._model_name)
         return out, None
+
+    def extract_all_themes(
+        self,
+        main_df: pd.DataFrame,
+        tmp: float = 0,
+    ) -> List[dict]:
+        """
+        Single LLM call over all unique parentChunks from main_df.
+        Returns up to 10 distinctive analyst-relevant themes, each with 4-5 bullet points.
+        """
+        theme_prompt = self.prmpt_obj.get_all_themes()
+        pr = self.prmpt_obj.get_langchain_supported_prompt(["docs"], theme_prompt)
+        chain = self._chain_with_parser(pr, tmp)
+
+        parent_chunks = (
+            main_df.drop_duplicates(subset=["parentChunk"])["parentChunk"]
+            .dropna()
+            .tolist()
+        )
+        docs = "\n\n".join(f"[Section {i+1}]\n{text}" for i, text in enumerate(parent_chunks))
+
+        print(f"Extracting themes from {len(parent_chunks)} sections...")
+        try:
+            with get_openai_callback() as cb:
+                out = chain.invoke({"docs": docs})
+                self.cost_tracker.add_from_openai_callback("extract_themes", cb, self._model_name)
+            return out if isinstance(out, list) else []
+        except Exception as e:
+            print(f"Warning: Theme extraction failed: {e}")
+            return []
+
+    def extract_overall_summary(self, themes: List[dict], tmp: float = 0) -> str:
+        """
+        Single LLM call that takes extracted themes and returns a 150-180 word
+        analyst narrative paragraph (headline + anchor figures + tone + watchpoint).
+        """
+        if not themes:
+            return ""
+        summary_prompt = self.prmpt_obj.get_overall_summary()
+        pr = self.prmpt_obj.get_langchain_supported_prompt(["themes"], summary_prompt)
+        chain = self._chain_str_parser(pr, tmp)
+        print("Generating overall summary...")
+        try:
+            with get_openai_callback() as cb:
+                out = chain.invoke({"themes": themes})
+                self.cost_tracker.add_from_openai_callback("overall_summary", cb, self._model_name)
+            return out.strip()
+        except Exception as e:
+            print(f"Warning: Overall summary failed: {e}")
+            return ""
 
     def process_plan(self, main_df: pd.DataFrame, tmp: float = 0) -> Tuple[Any, None]:
         plan_prompt = self.prmpt_obj.get_planned_theme()

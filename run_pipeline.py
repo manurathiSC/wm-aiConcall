@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """
-Run the full earnings-call pipeline: load PDF -> context summary -> subchunks -> themes -> embeddings.
+Run the full earnings-call pipeline: load PDF -> context summary -> subchunks -> themes -> overall summary -> embeddings.
 Cost is tracked and written to output. Keys are read from .env.
 """
 import json
@@ -30,7 +30,7 @@ from process_concall import ProcessConcall
 
 # Default embedding model (can be overridden via env or args)
 DEFAULT_EMBEDDING_MODEL_TYPE = os.getenv("EMBEDDING_MODEL_TYPE", "openai")
-DEFAULT_EMBEDDING_MODEL_NAME = os.getenv("EMBEDDING_MODEL_NAME", "text-embedding-3-small")
+DEFAULT_EMBEDDING_MODEL_NAME = os.getenv("EMBEDDING_MODEL_NAME", "text-embedding-3-large")
 
 
 def run_pipeline(
@@ -42,9 +42,12 @@ def run_pipeline(
     embedding_model_type: str = DEFAULT_EMBEDDING_MODEL_TYPE,
     embedding_model_name: str | None = DEFAULT_EMBEDDING_MODEL_NAME,
     run_name: str | None = None,
+    compute_embeddings: bool = False,
 ) -> dict:
     """
     Run full pipeline and return summary dict (mainDf, plannedDf, executedDf, cost_tracker, paths).
+    Theme extraction (up to 10 analyst themes) and overall summary always run.
+    Set compute_embeddings=True to additionally generate embeddings for parentChunk and childChunk columns.
     """
     pdf_path = Path(pdf_path).resolve()
     output_dir = Path(output_dir).resolve() if Path(output_dir).is_absolute() else _PROJECT_ROOT / output_dir
@@ -120,30 +123,34 @@ def run_pipeline(
     else:
         executed_df = pd.DataFrame(columns=["executed_actions"])
 
-    # 4) Embeddings: mainDf (parentChunks, childChunks), plannedDf (planned_actions), executedDf (executed_actions)
-    emb_type = embedding_model_type or "openai"
-    emb_name = embedding_model_name
+    # 4) Embeddings: mainDf (parentChunk, childChunk) — only if compute_embeddings=True
+    if compute_embeddings:
+        emb_type = embedding_model_type or "openai"
+        emb_name = embedding_model_name
 
-    def _safe_embed(df: pd.DataFrame, col: str) -> pd.DataFrame:
-        try:
-            return get_embeddings_for_column(df, col, model_type=emb_type, model_name=emb_name)
-        except Exception as e:
-            print(f"Warning: Skipping embeddings for column {col!r}: {e}")
-            return df
+        def _safe_embed(df: pd.DataFrame, col: str) -> pd.DataFrame:
+            try:
+                return get_embeddings_for_column(df, col, model_type=emb_type, model_name=emb_name)
+            except Exception as e:
+                print(f"Warning: Skipping embeddings for column {col!r}: {e}")
+                return df
 
-    if "parentChunk" in main_df.columns:
-        main_df = _safe_embed(main_df, "parentChunk")
-    if "childChunk" in main_df.columns:
-        main_df = _safe_embed(main_df, "childChunk")
+        if "parentChunk" in main_df.columns:
+            main_df = _safe_embed(main_df, "parentChunk")
+        if "childChunk" in main_df.columns:
+            main_df = _safe_embed(main_df, "childChunk")
+    else:
+        print("Skipping embeddings (compute_embeddings=False).")
 
-    if "planned_actions" in planned_df.columns and planned_df.shape[0] > 0:
-        planned_df = _safe_embed(planned_df, "planned_actions")
-    if "executed_actions" in executed_df.columns and executed_df.shape[0] > 0:
-        executed_df = _safe_embed(executed_df, "executed_actions")
+    # 5) Analyst theme extraction — always runs
+    cluster_themes = process.extract_all_themes(main_df, tmp=temperature)
+    print(f"  {len(cluster_themes)} themes extracted.")
 
-    # 5) Save outputs (JSON instead of pkl)
+    # 6) Overall summary — always runs
+    overall_summary = process.extract_overall_summary(cluster_themes, tmp=temperature)
+
+    # 7) Save outputs
     def _df_to_json_path(df: pd.DataFrame, path: Path) -> None:
-        # Convert to list of dicts for JSON; handle numpy types and nested structures
         records = df.to_dict(orient="records")
         def _serialize(obj):
             if hasattr(obj, "item"):
@@ -162,12 +169,18 @@ def run_pipeline(
     exec_path = output_dir / f"Exec_{run_name}.json"
     neg_path = output_dir / f"Neg_{run_name}.json"
     pos_path = output_dir / f"Pos_{run_name}.json"
+    cluster_path = output_dir / f"Clusters_{run_name}.json"
+    summary_path = output_dir / f"OverallSummary_{run_name}.txt"
     cost_path = output_dir / f"cost_{run_name}.json"
 
     _df_to_json_path(main_df, main_path)
     main_df.to_excel(output_dir / f"Main_{run_name}.xlsx", index=False)
     _df_to_json_path(planned_df, plan_path)
     _df_to_json_path(executed_df, exec_path)
+    with open(cluster_path, "w", encoding="utf-8") as f:
+        json.dump(cluster_themes, f, indent=2, ensure_ascii=False)
+    with open(summary_path, "w", encoding="utf-8") as f:
+        f.write(overall_summary)
 
     def _theme_list_to_json(obj: Any, path: Path) -> None:
         if isinstance(obj, list):
@@ -196,6 +209,7 @@ def run_pipeline(
         "main_df": main_df,
         "planned_df": planned_df,
         "executed_df": executed_df,
+        "overall_summary": overall_summary,
         "cost_tracker": cost_tracker,
         "elapsed_seconds": elapsed,
         "paths": {
@@ -204,6 +218,8 @@ def run_pipeline(
             "exec_json": str(exec_path),
             "neg_json": str(neg_path),
             "pos_json": str(pos_path),
+            "cluster_json": str(cluster_path),
+            "summary_txt": str(summary_path),
             "cost_json": str(cost_path),
         },
     }
@@ -219,6 +235,7 @@ def main():
     parser.add_argument("--temp", type=float, default=0.0, help="LLM temperature")
     parser.add_argument("--embed-type", default=DEFAULT_EMBEDDING_MODEL_TYPE, help="Embedding model type")
     parser.add_argument("--embed-model", default=None, help="Embedding model name")
+    parser.add_argument("--embeddings", action="store_true", default=False, help="Compute embeddings for parentChunk and childChunk")
     args = parser.parse_args()
 
     pdf_path = args.pdf or str(_PROJECT_ROOT / "Concalls" / "DLF_Jan26.pdf")
@@ -234,6 +251,7 @@ def main():
         embedding_model_type=args.embed_type,
         embedding_model_name=args.embed_model or DEFAULT_EMBEDDING_MODEL_NAME,
         run_name=Path(pdf_path).stem,
+        compute_embeddings=args.embeddings,
     )
 
 
