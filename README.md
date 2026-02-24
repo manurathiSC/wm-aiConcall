@@ -88,8 +88,4 @@ The pipeline already adds:
 
 See `HUGGINGFACE_USAGE.md` for a step-by-step checklist.
 
-## Pushing to GitHub
 
-- Do **not** commit `.env` (it’s in `.gitignore`).
-- Commit `.env.example` so others know which variables to set.
-- Ensure no API keys or paths in code; all secrets in `.env`.
